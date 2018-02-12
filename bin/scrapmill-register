@@ -1,0 +1,19 @@
+#!/bin/bash
+
+VENDOR=$1
+REPONAME=$2
+REPOBASEURL=$3
+
+if [ "$REPOBASEURL" == "" ]; then
+  echo "cmd vendor repo baseurl"
+  exit 1
+fi
+
+mkdir -p /var/www/html/meta/${VENDOR}/
+cat << EOF > /var/www/html/meta/${VENDOR}/${REPONAME}.repo
+[${REPONAME}]
+name=${VENDOR}-${REPONAME}
+baseurl=${REPOBASEURL}
+enabled=1
+gpgcheck=0
+EOF
