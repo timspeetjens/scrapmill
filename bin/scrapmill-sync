@@ -1,0 +1,49 @@
+#!/bin/bash
+
+VENDOR=$1
+REPONAME=$2
+
+if [ "$REPONAME" == "" ]; then
+  echo "cmd vendor reponame"
+  exit 1
+fi
+
+METADIR=/var/www/html/meta/${VENDOR}
+
+# rpms
+RPMPOOLDIR=/var/www/html/pool/${VENDOR}
+mkdir -p ${RPMPOOLDIR}
+cd ${RPMPOOLDIR} && reposync -c ${METADIR}/${REPONAME}.repo -r ${REPONAME}
+
+# get metadata
+REPOBASEDIR=/var/www/html/repos/${VENDOR}/${REPONAME}
+mkdir -p ${REPOBASEDIR}
+TMPDIR=$(cd $(mktemp -d -p ${REPOBASEDIR} ) && pwd)
+
+mkdir ${TMPDIR}/repodata
+
+BASEURL=$(sed -n 's/baseurl=\(.*\)/\1/p' ${METADIR}/${REPONAME}.repo)
+
+cd $TMPDIR/repodata && (
+  curl ${BASEURL}/repodata/repomd.xml -o repomd.xml &&
+  sed -n 's/.*href="\(.*\)".*/\1/p' < repomd.xml | while read HREF; do
+    FILEHREF=${HREF##*/}
+    curl ${BASEURL}/${HREF} -o ${FILEHREF}
+    if [[ "$FILEHREF" =~ "primary.xml.gz" ]]; then
+        zcat $FILEHREF  | tr -d '\n' | sed 's#package>#package>\n#g' |
+          sed -n 's/.*checksum type="sha256" pkgid="YES">\([0-9a-f]\+\)<.*location href="\([^"]\+\)".*/\1 \2/p' |
+          sort > scrapmeta
+    fi
+  done
+)
+
+REPOID=$(while read SHA FILE; do echo $SHA; done < $TMPDIR/repodata/scrapmeta | sha256sum |
+           while read REPOID X; do echo $REPOID; done)
+if [ -d "${REPOBASEDIR}/${REPOID}" ]; then
+  rm -rf "$TMPDIR"
+else
+  mkdir ${REPOBASEDIR}/${REPOID}
+  mv $TMPDIR/repodata ${REPOBASEDIR}/${REPOID}/
+  rmdir $TMPDIR
+fi
+
